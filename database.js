@@ -40,7 +40,22 @@ const db = new sqlite3.Database(DBSOURCE, (err) => {
                 db.run(insert, ["Hayao Miyazaki", 1941]);
             }
         });
-    }
-});
 
+        // Tabel users
+        db.run(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL
+            )
+        `, (err) => {
+            if (err) {
+                console.error('Gagal membuat tabel users:', err.message);
+            } else {
+                console.log('Tabel users berhasil dibuat.');
+            }
+        });
+
+    }
+}); 
 module.exports = db;
