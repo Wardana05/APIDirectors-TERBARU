@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const db = require('./database.js');
-const authenticateToken = require('./middleware/authMiddleware'); // Pastikan file ini ada
+const { authenticateToken, authorizeRole } = require('./middleware/auth.js');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -34,14 +34,14 @@ app.post('/auth/register', (req, res) => {
         return res.status(400).json({ error: 'Username dan password (min 6 char) harus diisi' });
     }
 
-    bcrypt.hash(password, 10, (err, hashedPassword) => {
+   bcrypt.hash(password, 10, (err, hashedPassword) => { // penanganan error hash
         if (err) {
             console.error("Error hashing:", err);
             return res.status(500).json({ error: 'Gagal memproses pendaftaran' });
         }
 
-        const sql = 'INSERT INTO users (username, password) VALUES (?, ?)';
-        const params = [username.toLowerCase(), hashedPassword];
+        const sql = 'INSERT INTO users (username, password, role) VALUES (?, ?, ?)';
+        const params = [username.toLowerCase(), hashedPassword, 'user']; // Tetapkan 'user'
 
         db.run(sql, params, function(err) {
             // Error code 19 sering berarti UNIQUE constraint violation (username sudah ada)
@@ -54,6 +54,33 @@ app.post('/auth/register', (req, res) => {
             }
 
             res.status(201).json({ message: 'User berhasil didaftarkan', userId: this.lastID });
+        });
+    });
+});
+
+// tambahkan endpoint /auth/register-admin (hanya dev)
+app.post('/auth/register-admin', (req, res) => {
+    const { username, password } = req.body;
+    
+    // validasi seperti memeriksa keberadaan username/password)
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username dan password diperlukan.' });
+    }
+
+    bcrypt.hash(password, 10, (err, hashedPassword) => {
+        if (err) {
+            return res.status(500).json({ error: 'Gagal mengenkripsi password.' });
+        }
+
+        const sql = 'INSERT INTO users (username, password, role) VALUES (?, ?, ?)';
+        const params = [username.toLowerCase(), hashedPassword, 'admin']; // Tetapkan 'admin'
+
+        db.run(sql, params, function (err) {
+            if (err && err.message.includes('UNIQUE')) {
+                return res.status(409).json({ error: 'Username admin sudah ada' });
+            }
+            if (err) { return res.status(500).json({ error: err.message }); }
+            res.status(201).json({ message: 'Admin berhasil dibuat', userId: this.lastID });
         });
     });
 });
@@ -75,7 +102,17 @@ app.post('/auth/login', (req, res) => {
                 return res.status(401).json({ error: 'Kredensial tidak valid' });
             }
 
-            const payload = { user: { id: user.id, username: user.username } };
+            // Memperbarui payload JWT untuk menyertakan role
+            const payload = {
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    role: user.role // Ambil peran dari basis data
+                }
+            };
+
+            const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' }); 
+            // ... sisa logika login
 
             // Pastikan JWT_SECRET diisi di file .env Anda!
             jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
@@ -100,8 +137,7 @@ app.get('/movies', (req, res) => {
     });
 });
 
-// POST /movies (PROTECTED - Memerlukan token)
-// Kita menggunakan logika dari POST /movies di baris 33 yang sudah Anda buat
+// POST /movies (PROTECTED - Memerlukan token, role apa pun)
 app.post('/movies', authenticateToken, (req, res) => {
     const { title, director, year } = req.body;
     
@@ -115,6 +151,38 @@ app.post('/movies', authenticateToken, (req, res) => {
     db.run(sql, [title, director, year], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.status(201).json({ id: this.lastID, title, director, year, message: 'Film berhasil ditambahkan' });
+    });
+});
+
+// Endpoint PUT /movies/:id (PROTECTED - Memerlukan token DAN peran admin)
+app.put('/movies/:id', [authenticateToken, authorizeRole('admin')], (req, res) => {
+    const { title, director, year } = req.body;
+    
+    if (!title || !director || !year) {
+        return res.status(400).json({ error: "title, director, and year are required" });
+    }
+
+    const sql = 'UPDATE movie SET title = ?, director = ?, year = ? WHERE id = ?';
+    db.run(sql, [title, director, year, req.params.id], function(err) {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Movie not found or no changes made." });
+        }
+        res.json({ updatedID: req.params.id, title, director, year, message: 'Film berhasil diperbarui' });
+    });
+});
+
+// Endpoint DELETE /movies/:id (PROTECTED - Memerlukan token DAN peran admin)
+app.delete('/movies/:id', [authenticateToken, authorizeRole('admin')], (req, res) => {
+    const sql = "DELETE FROM movie WHERE id = ?";
+    db.run(sql, [req.params.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Movie not found." });
+        }
+        res.json({ deletedID: req.params.id, message: "Film berhasil dihapus" });
     });
 });
 
@@ -137,7 +205,7 @@ app.get('/directors/:id', (req, res) => {
     });
 });
 
-// POST /directors (PROTECTED - Memerlukan token)
+// POST /directors (PROTECTED - Memerlukan token, role apa pun)
 app.post('/directors', authenticateToken, (req, res) => {
     const { name, birthYear } = req.body;
     if (!name || !birthYear) {
@@ -150,8 +218,9 @@ app.post('/directors', authenticateToken, (req, res) => {
     });
 });
 
-// PUT /directors/:id (PROTECTED - Memerlukan token)
-app.put('/directors/:id', authenticateToken, (req, res) => {
+// PUT /directors/:id (PROTECTED - Memerlukan token DAN peran admin)
+// Perubahan: Menambahkan authorizeRole('admin')
+app.put('/directors/:id', [authenticateToken, authorizeRole('admin')], (req, res) => {
     const { name, birthYear } = req.body;
     if (!name || !birthYear) {
         return res.status(400).json({ error: "name and birthYear are required" });
@@ -161,16 +230,23 @@ app.put('/directors/:id', authenticateToken, (req, res) => {
         if (err) {
             return res.status(500).json({ error: err.message });
         }
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Director not found or no changes made." });
+        }
         res.json({ updatedID: req.params.id, name, birthYear });
     });
 });
 
-// DELETE /directors/:id (PROTECTED - Memerlukan token)
-app.delete('/directors/:id', authenticateToken, (req, res) => {
+// DELETE /directors/:id (PROTECTED - Memerlukan token DAN peran admin)
+// Perubahan: Menambahkan authorizeRole('admin')
+app.delete('/directors/:id', [authenticateToken, authorizeRole('admin')], (req, res) => {
     const sql = "DELETE FROM directors WHERE id = ?";
     db.run(sql, [req.params.id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ deletedID: req.params.id });
+        if (this.changes === 0) {
+            return res.status(404).json({ error: "Director not found." });
+        }
+        res.json({ deletedID: req.params.id, message: "Director berhasil dihapus" });
     });
 });
 

@@ -43,18 +43,17 @@ const db = new sqlite3.Database(DBSOURCE, (err) => {
 
         // Tabel users
         db.run(`
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE,
-                password TEXT NOT NULL
-            )
-        `, (err) => {
-            if (err) {
-                console.error('Gagal membuat tabel users:', err.message);
-            } else {
-                console.log('Tabel users berhasil dibuat.');
-            }
-        });
+          CREATE TABLE IF NOT EXISTS users (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL UNIQUE,
+              password TEXT NOT NULL,
+              role TEXT NOT NULL DEFAULT 'user' 
+        )`, (err) => {
+         // penanganan error
+        if (!err) {
+            console.log('Tabel users berhasil dibuat (dengan kolom role).'); 
+       }
+    });
 
     }
 }); 
