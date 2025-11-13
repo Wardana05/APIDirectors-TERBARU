@@ -1,0 +1,38 @@
+# Dependency
+/node_modules
+
+# Environment variables
+.env
+
+# Ignore protected Windows directories
+Application Data/
+Cookies/
+Local Settings/
+My Documents/
+NetHood/
+PrintHood/
+Recent/
+SendTo/
+Start Menu/
+Templates/
+.android/
+.config/
+AppData/
+Contacts/
+Desktop/
+Documents/
+Downloads/
+Favorites/
+IntelGraphicsProfiles/
+Links/
+Music/
+NTUSER.DAT
+NTUSER.DAT{*}
+OneDrive/
+Pictures/
+Saved Games/
+Searches/
+Videos/
+
+node_modules/
+.vscode/
